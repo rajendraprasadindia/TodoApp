@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My HTML App</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; background:#0f172a; color:#e2e8f0; display:flex; min-height:100vh; }
+    .wrap { margin:auto; width:min(680px, 92vw); }
+    .card { background:#111827; border:1px solid #334155; border-radius:16px; padding:20px; box-shadow:0 10px 25px rgba(0,0,0,.25); }
+    h1 { margin:0 0 12px; font-size:1.4rem; }
+    form { display:flex; gap:10px; margin:10px 0 16px; }
+    input[type="text"] { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; }
+    button { padding:12px 16px; border:0; border-radius:12px; background:#22c55e; color:#052e16; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    ul { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+    li { display:flex; align-items:center; gap:10px; background:#0b1220; border:1px solid #334155; padding:12px; border-radius:12px; }
+    .empty { opacity:.75; text-align:center; padding:18px; border:1px dashed #334155; border-radius:12px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .grow { flex:1; }
+    .muted { color:#94a3b8; font-size:.9rem; }
+    .actions button { background:#f43f5e; color:#fff; }
+    a.link { color:#60a5fa; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-labelledby="title">
+      <h1 id="title">✅ My HTML App (To-Do)</h1>
+
+      <form id="form" autocomplete="off">
+        <input id="task" type="text" placeholder="Add a task…" aria-label="Task name" required />
+        <button id="addBtn" type="submit">Add</button>
+      </form>
+
+      <ul id="list" aria-live="polite"></ul>
+
+      <p class="muted">
+        Data is saved locally in your browser.
+        <a class="link" href="#" id="export">Export</a> ·
+        <a class="link" href="#" id="import">Import</a> ·
+        <a class="link" href="#" id="clear">Clear</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "html-app-todos-v1";
+    const el = {
+      form: document.getElementById("form"),
+      task: document.getElementById("task"),
+      list: document.getElementById("list"),
+      export: document.getElementById("export"),
+      import: document.getElementById("import"),
+      clear: document.getElementById("clear"),
+    };
+
+    let todos = load();
+
+    function load() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? []; }
+      catch { return []; }
+    }
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+      render();
+    }
+
+    function render() {
+      if (!todos.length) {
+        el.list.innerHTML = `<li class="empty">No tasks yet — add one above.</li>`;
+        return;
+      }
+      el.list.innerHTML = "";
+      for (const t of todos) {
+        const li = document.createElement("li");
+        const row = document.createElement("div");
+        row.className = "row grow";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = !!t.done;
+        checkbox.addEventListener("change", () => {
+          t.done = checkbox.checked; save();
+        });
+
+        const span = document.createElement("span");
+        span.textContent = t.text;
+        span.style.textDecoration = t.done ? "line-through" : "none";
+        span.className = "grow";
+
+        const actions = document.createElement("div");
+        actions.className = "actions row";
+        const del = document.createElement("button");
+        del.type = "button";
+        del.textContent = "Delete";
+        del.addEventListener("click", () => {
+          todos = todos.filter(x => x.id !== t.id); save();
+        });
+
+        actions.appendChild(del);
+        row.appendChild(checkbox);
+        row.appendChild(span);
+        li.appendChild(row);
+        li.appendChild(actions);
+        el.list.appendChild(li);
+      }
+    }
+
+    el.form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = el.task.value.trim();
+      if (!text) return;
+      todos.unshift({ id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random())), text, done: false, createdAt: Date.now() });
+      el.task.value = "";
+      save();
+    });
+
+    // Export / Import / Clear
+    el.export.addEventListener("click", (e) => {
+      e.preventDefault();
+      const blob = new Blob([JSON.stringify(todos, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), { href: url, download: "todos.json" });
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+    el.import.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const inp = Object.assign(document.createElement("input"), { type: "file", accept: "application/json" });
+      inp.onchange = async () => {
+        const file = inp.files?.[0]; if (!file) return;
+        try {
+          const json = JSON.parse(await file.text());
+          if (!Array.isArray(json)) throw new Error("Invalid file");
+          todos = json.map(x => ({ id: x.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random())), text: String(x.text || ""), done: !!x.done }));
+          save();
+        } catch (err) { alert("Import failed: " + err.message); }
+      };
+      inp.click();
+    });
+    el.clear.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (confirm("Clear all tasks?")) { todos = []; save(); }
+    });
+
+    render();
+
+    // Register SW if served over http(s)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+    }
+  </script>
+</body>
+</html>
